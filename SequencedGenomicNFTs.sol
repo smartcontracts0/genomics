@@ -11,7 +11,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
         function LinkChildNFTtoParentNFT(uint256, uint256) external;
     }
 
-contract GenomicDataNFTs is ERC721URIStorage, Ownable{
+contract SequencedGenomicDataNFTs is ERC721URIStorage, Ownable{
     uint public tokenCount;
     IGenomicsDataManagment public GenomicsDataManagement;
     //mapping (address => bool) public whitelist; //only whitelisted addresses can mint NFTs
