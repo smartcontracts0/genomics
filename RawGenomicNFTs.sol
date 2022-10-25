@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Burnable.sol"; //Imported in case burning NFTs is used
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract GenomicDataNFTs is ERC721URIStorage, Ownable{
+contract RawGenomicDataNFTs is ERC721URIStorage, Ownable{
     uint public tokenCount;
     constructor () ERC721("Raw Genomic Data NFTs", "RGD"){} // The constructor uses the imported ERC721 contract which requires two inputs in its constructor, the name and symbol of the NFT
     
