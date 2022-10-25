@@ -23,9 +23,9 @@ contract GenomicsDataManagement is ReentrancyGuard{
     uint256 public FullAccessGrantingPeriod; //Timewindow to grant full access
     uint256 public LimitedAccessGrantingPeriod; //Timewindow to grant limited access
     address public RegistrationAuthority; //Repsonsible for registering eligible sequencing Centers
-    address payable public buyer; //The address of the genomic data buyer
-    address payable public dataOwner; // The address of the genomic data owner
-    address public SequencedNFTAddress;
+    //address payable public buyer; //The address of the genomic data buyer
+    //address payable public dataOwner; // The address of the genomic data owner
+    //address public SequencedNFTAddress;
     address public LimitedAccessOracle; //This oracle is responsible for updating the number of operations for a buyer
     mapping(address => bool) public sequencingCenter; //A mapping of authorized sequencing centers
     uint256 public RawNFTsCount; //This is the RawNFTs number within the managment smart contract, not the NFT SC
@@ -38,13 +38,14 @@ contract GenomicsDataManagement is ReentrancyGuard{
         IERC721 nft; //Necessary to enable transferring nfts when called later on
         uint256 tokenId; 
         address payable dataOwner;
+        //bool minted; //Checks if the NFT is minted or not (needed 
         uint256 sequencingcost1; //Method1 cost This is necessary to know the value of sequencing at the time of sequencing because it can be updated at any time
         uint256 sequencingcost2; //Method2 cost
         uint256 sequencingcost3; //Method3 cost
     }
 
     //Method number => price/cost
-    mapping(uint256 => uint256) SequencingMethodPrice; //Mapping each sequecning method to its corresponding price
+    mapping(uint256 => uint256) public SequencingMethodPrice; //Mapping each sequecning method to its corresponding price
 
     // NFT count => struct 
     mapping(uint256 => RawGenomicNFT) public RawNFTs; //Maps each RawGenomicNFT to a unique number within the mgmt SC
@@ -58,7 +59,7 @@ contract GenomicsDataManagement is ReentrancyGuard{
 
     //NFT count => mapping(request number => buyer address)
     mapping(uint256 => mapping(uint256 => address)) public SequenceRequesterAddress; //Stores the address of the buyer who requested sequencing
-    
+
     
     //NFT count => (buyer address => request number)
     mapping(uint256 => mapping(address => uint256)) public SequencingRequestNumberPerBuyer; //The buyer address is necessary becauase new buyers might come after and mess up the counter
@@ -78,6 +79,11 @@ contract GenomicsDataManagement is ReentrancyGuard{
     //NFT count => (request number => starting time)
     mapping(uint256 => mapping(uint256 => uint256)) public SequencingRequestStartTime;
 
+    //NFT Count => (request number => bool)
+    mapping(uint256 => mapping(uint256 => bool)) public SequencingRequestNumberExist; //Checks if the sequencing request number exists or not
+
+
+
     //NFT count => (request number => bool)
     mapping(uint256 => mapping(uint256 => bool)) public SequencingRequestCompleted; //Checks if the sequencing request has been fulfilled or not (important to check before allowing the buyer to withdraw funds)
 
@@ -95,7 +101,6 @@ contract GenomicsDataManagement is ReentrancyGuard{
         uint256 tokenId; 
         uint256 fullaccessprice; //It is assumed that the price for full access is fixed but it can be decided in an auction if needed
         uint256 limitedaccessprice; //This is the price for one operation on the encrypted data
-        //uint256 pendingrequests; //Tracks the number of full or limited access requests (has to be zero if the owner wants to delist)
     }
 
 
@@ -148,7 +153,7 @@ contract GenomicsDataManagement is ReentrancyGuard{
     //mapping(uint256 => mapping(address => uint256)) public LimitedAccessRequestStartingTime; //This is the time at which the request for full access was initiated by a buyer's address
 
     // NFT count => mapping(buyer address => bool)
-    mapping(uint256 => mapping(address => bool)) public InitialFullAccessBuyers; //maps the nft id and buyer address to boolean
+    //mapping(uint256 => mapping(address => bool)) public InitialFullAccessBuyers; //maps the nft id and buyer address to boolean
     // NFT count => mapping(buyer address => bool)
     mapping(uint256 => mapping(address => bool)) public FullAccessBuyersTracker; //maps the nft id and buyer address to boolean
 
@@ -225,7 +230,7 @@ contract GenomicsDataManagement is ReentrancyGuard{
     event DelistedRawGenomicNFT(uint256 RawNFTId, address indexed nft, uint256 tokenId, address indexed dataOwner);
     event RawNFTSequencingPayment(uint256 RawNFTId, address indexed nft, uint256 tokenId, address indexed dataOwner, address indexed buyer, uint256 requestnumber, uint256 sequencingStartTime, uint256 sequencingDeadline, uint256 sequencingmethod, uint256 sequencingcost);
     event SequencingCenterCommitted(uint256 RawNFTId, address indexed nft, uint256 tokenId, address indexed dataOwner, address indexed CommittedsequencingCenter);
-    event RawNFTisSequenced(uint256 RawNFTId, address indexed nft, uint256 tokenId, address indexed dataOwner, address buyer, address indexed sequencingCenter);
+    event RawNFTisSequenced(uint256 RawNFTId, address indexed nft, uint256 tokenId, address indexed dataOwner, address buyer, address indexed sequencingCenter, bytes sig);
     event DirectSequencingPayment(address indexed dataOwner, uint256 sequencingStartTime, uint256 sequencingDeadline);
     event ListedSequencedGenomicNFT(uint256 SeqNFTId, address indexed nft2 , uint256 tokenId, address indexed dataOwner, uint256 fullaccessprice, uint256 limitedaccessprice); 
     event SequencingSignatureStorage(address indexed verifiedAddress, address indexed dataOwner, address indexed nft, uint256 tokenId, string message, bytes signature);
@@ -247,9 +252,9 @@ contract GenomicsDataManagement is ReentrancyGuard{
         SequencingPeriod = _SequencingPeriod * 1 days; //The period is arbitrarly chosens
         FullAccessGrantingPeriod = _FullAccessGrantingPeriod * 1 days; //The period is arbitrarly chosen
         LimitedAccessGrantingPeriod = _LimitedAccessGrantingPeriod * 1 days; //The period is arbitrarly chosen
-        SequencingMethodPrice[1] = _sequencingPrice1;
-        SequencingMethodPrice[2] = _sequencingPrice2;
-        SequencingMethodPrice[3] = _sequencingPrice3;
+        SequencingMethodPrice[1] = _sequencingPrice1 * 1 ether;
+        SequencingMethodPrice[2] = _sequencingPrice2 * 1 ether;
+        SequencingMethodPrice[3] = _sequencingPrice3 * 1 ether;
         RegistrationAuthority = msg.sender; //The deployer of the smart contract is the registration authority
         RawNFTSmartContract = IERC721(_rawNFTaddress); //the smart contract address is casted in IERC721 to allow it to access its functionalities such as transfer
         SequencedNFTSmartContract = IERC721(_seqNFTAddress);
@@ -329,9 +334,9 @@ contract GenomicsDataManagement is ReentrancyGuard{
 
 
     function UpdateSequencingMethodPrice(uint256 _method1price, uint256 _method2price, uint256 _method3price) external onlySequencingCenter{
-        SequencingMethodPrice[1] = _method1price;
-        SequencingMethodPrice[2] = _method2price;
-        SequencingMethodPrice[3] = _method3price;
+        SequencingMethodPrice[1] = _method1price * 1 ether;
+        SequencingMethodPrice[2] = _method2price * 1 ether;
+        SequencingMethodPrice[3] = _method3price * 1 ether;
     }
 
     //This function only lists the raw genomic NFT so that interested buyer can view it and decide to sequence it or not
@@ -360,7 +365,8 @@ contract GenomicsDataManagement is ReentrancyGuard{
     function PayForRawNFTSequencing(uint256 _sequencingmethod, uint256 _RawNFTId) external payable nonReentrant{
         RawGenomicNFT storage Raw = RawNFTs[_RawNFTId]; //Stores all the related data of the requested genomic NFT to easily access it
         require(_RawNFTId > 0 && _RawNFTId <= RawNFTsCount, "The requested NFT doesn't exist");
-        require(msg.value >= SequencingMethodPrice[_sequencingmethod], "Not enough ether to cover the sequencing cost");
+        require(SequencingMethodPrice[_sequencingmethod] > 0, "The selected sequencing method does not exist"); //If free sequencinng is required in the solution, then a mapping to boolean will be needed
+        require(msg.value == SequencingMethodPrice[_sequencingmethod], "Not enough ether to cover the sequencing cost or it exceeds the sequencing cost");
         require(!sequencingPayerTracker[msg.sender][Raw.RawNFTId], "This buyer has already submitted a sequencing request for this NFT");
         require(msg.sender != Raw.dataOwner, "The owner of the NFT cannot execute this function"); 
 
@@ -371,8 +377,9 @@ contract GenomicsDataManagement is ReentrancyGuard{
         SequencingRequestNumberPerBuyer[Raw.RawNFTId][msg.sender] = SequencingRequestsCounter[Raw.RawNFTId]; //Storing the request number per buyer
         ActiveSequencingRequests[Raw.RawNFTId] += 1; //The active number of requests can be updated when a request is fulfilled
         SequencingRequestStartTime[Raw.RawNFTId][SequencingRequestNumberPerBuyer[Raw.RawNFTId][msg.sender]] = block.timestamp; 
-        SequenceRequesterAddress[Raw.RawNFTId][SequencingRequestsCounter[Raw.RawNFTId]] = msg.sender; //Stores the address of sequence requester
+        SequenceRequesterAddress[Raw.RawNFTId][SequencingRequestsCounter[Raw.RawNFTId]] = msg.sender; //Stores the address of sequence requester to be used for checking during message signature
         RequestedSequencingMethod[Raw.RawNFTId][SequencingRequestNumberPerBuyer[Raw.RawNFTId][msg.sender]] = _sequencingmethod;
+        SequencingRequestNumberExist[Raw.RawNFTId][SequencingRequestsCounter[Raw.RawNFTId]] = true; //This ensures that the sequence center selects a valid request number
         //NOTE: It is necessary to update the sequencing price of the requestd method in the struct of the NFT to ensure that the value
         // of the price is stored even if it is updated in the smart contract later on 
         if(_sequencingmethod == 1){
@@ -396,9 +403,9 @@ contract GenomicsDataManagement is ReentrancyGuard{
         require(sequencingPayerTracker[msg.sender][Raw.RawNFTId] == true, "The caller has not paid for the sequencing of this NFT"); 
         require(SequencingRequestStartTime[Raw.RawNFTId][_requestnumber] > block.timestamp, "The time window for full access request is still openned");
         require(!SequencingRequestCompleted[Raw.RawNFTId][_requestnumber], "This sequencing request has already been completed and funds cannot be withdrawn");
-
     
-        payable(msg.sender).call{value: sequencingRequesterPaidAmount[msg.sender][Raw.RawNFTId]}; 
+        //payable(msg.sender).call{value: sequencingRequesterPaidAmount[msg.sender][Raw.RawNFTId]}; 
+        payable(msg.sender).transfer(sequencingRequesterPaidAmount[msg.sender][Raw.RawNFTId]);
         sequencingPayerTracker[msg.sender][Raw.RawNFTId] = false;
         ActiveSequencingRequests[Raw.RawNFTId] -= 1; 
     }
@@ -407,8 +414,9 @@ contract GenomicsDataManagement is ReentrancyGuard{
     function CommitToRawNFTSequencingRequest(uint256 _requestnumber, uint256 _RawNFTId) external onlySequencingCenter{
         RawGenomicNFT storage Raw = RawNFTs[_RawNFTId]; //Stores all the related data of the requested genomic NFT to easily access it
         require(!SequencingRequestCompleted[Raw.RawNFTId][_requestnumber], "This sequencing request has already been completed");
-        //require(Raw.isPendingSequencing == true, "This Raw genomic data is not pending sequencing");
+        require(SequencingRequestNumberExist[Raw.RawNFTId][_requestnumber], "Either the inserted request number or NFT ID is invalid");
         require(CommittedsequencingCenter[Raw.RawNFTId][_requestnumber] == address(0), "A sequencing center is already committed to sequencing this raw genomic data");
+        require(_RawNFTId > 0 && _RawNFTId <= RawNFTsCount, "The requested NFT doesn't exist");
 
         CommittedsequencingCenter[Raw.RawNFTId][_requestnumber] = payable(msg.sender); //The sequencing center calling this function becomes accountable for this NFT
         
@@ -425,13 +433,13 @@ contract GenomicsDataManagement is ReentrancyGuard{
         SequencingSignature storage signature = sequencingSignatures[_RawNFTId][_requestnumber];
         RawGenomicNFT storage Raw = RawNFTs[_RawNFTId]; //Stores all the related data of the requested genomic NFT to easily access it
         require(block.timestamp <= SequencingRequestStartTime[Raw.RawNFTId][_requestnumber] + SequencingPeriod, "The sequencing time window is already closed");
-        require(CommittedsequencingCenter[Raw.RawNFTId][_requestnumber] == msg.sender, "Only the committed sequencing center to this NFT can execute this functioh");
+        require(CommittedsequencingCenter[Raw.RawNFTId][_requestnumber] == msg.sender, "Only the committed sequencing center to this NFT can execute this function");
         require(signature.dataOwner == Raw.dataOwner, "The sequencing center cannot prove sequencing raw genomic data without the reception confirmation signature of the owner");
 
 
-        payable(msg.sender).call{value: SequencingMethodPrice[RequestedSequencingMethod[Raw.RawNFTId][_requestnumber]]}; //Transfer the sequencing value to the sequencing center 
-
-        emit RawNFTisSequenced(Raw.RawNFTId, address(Raw.nft), Raw.tokenId, Raw.dataOwner, SequenceRequesterAddress[Raw.RawNFTId][_requestnumber], msg.sender);
+        //payable(msg.sender).call{value: SequencingMethodPrice[RequestedSequencingMethod[Raw.RawNFTId][_requestnumber]]}; //Transfer the sequencing value to the sequencing center 
+        payable(msg.sender).transfer(SequencingMethodPrice[RequestedSequencingMethod[Raw.RawNFTId][_requestnumber]]);
+        emit RawNFTisSequenced(Raw.RawNFTId, address(Raw.nft), Raw.tokenId, Raw.dataOwner, SequenceRequesterAddress[Raw.RawNFTId][_requestnumber], msg.sender, signature.sig);
 
 
     }
@@ -441,13 +449,13 @@ contract GenomicsDataManagement is ReentrancyGuard{
     InitialFullAccessSignature storage signature = initialfullaccessSignatures[Raw.RawNFTId][ _requestnumber];
 
     require(SequenceRequesterAddress[Raw.RawNFTId][_requestnumber] == signature.dataBuyer, "The signature does not belong to the sequencing buyer");
-    require(sequencingPayerTracker[signature.dataBuyer][Raw.RawNFTId], "The buyer address doesn't belong to any valid initial full access buyers");
+    require(sequencingPayerTracker[SequenceRequesterAddress[Raw.RawNFTId][_requestnumber]][Raw.RawNFTId], "The buyer address doesn't belong to any valid initial full access buyers");
     require(block.timestamp <= SequencingRequestStartTime[Raw.RawNFTId][_requestnumber] + SequencingPeriod, "The sequencing time window is already closed");
     require(msg.sender == Raw.dataOwner, "Only the owner of the Raw NFT is allowed to run this function");
 
     ActiveSequencingRequests[Raw.RawNFTId] -= 1; 
     SequencingRequestCompleted[Raw.RawNFTId][_requestnumber] = true; 
-    SequencedNFTMintingBalance[Raw.dataOwner][Raw.RawNFTId] += 1; //The data owner's balance/allowance of minting sequenced genomic data NFT is increased by 1
+    SequencedNFTMintingBalance[Raw.dataOwner][Raw.RawNFTId] += 1; //The data owner's balance/allowance of minting sequenced genomic data NFT that will be linked to this RAW NFT is increased by 1
 
 
     emit InitialFullAccessGranted(Raw.RawNFTId, address(Raw.nft), Raw.tokenId, msg.sender, signature.dataBuyer);
@@ -479,7 +487,7 @@ contract GenomicsDataManagement is ReentrancyGuard{
     function listSequencedGenomicNFT(uint256 _tokenId, uint256 _fullaccessprice, uint256 _limitedaccessprice) external nonReentrant{
         SequencedNFTSmartContract.transferFrom(msg.sender, address(this), _tokenId); //Transfers the NFT from its owner to the smart contract until process is completed
         SequencedNFTsCount++; 
-        SequencedNFTs[SequencedNFTsCount] = SequencedGenomicNFT(SequencedNFTsCount, SequencedNFTSmartContract, payable(msg.sender), _tokenId, _fullaccessprice, _limitedaccessprice); //new address[](0) is used to initialize an empty array
+        SequencedNFTs[SequencedNFTsCount] = SequencedGenomicNFT(SequencedNFTsCount, SequencedNFTSmartContract, payable(msg.sender), _tokenId, (_fullaccessprice * 1 ether),( _limitedaccessprice * 1 ether)); //new address[](0) is used to initialize an empty array
         ActiveChildrenListings[childToParentTokenId[address(SequencedNFTSmartContract)][_tokenId]] += 1;
         emit ListedSequencedGenomicNFT(SequencedNFTsCount, address(SequencedNFTSmartContract), _tokenId, msg.sender, _fullaccessprice, _limitedaccessprice); 
     }
@@ -498,7 +506,7 @@ contract GenomicsDataManagement is ReentrancyGuard{
     function requestFullAccess(uint256 _SeqNFTId) external payable nonReentrant{
         SequencedGenomicNFT storage Sequenced = SequencedNFTs[_SeqNFTId]; //Stores all the related data of the requested genomic NFT to easily access it
         require(_SeqNFTId > 0 && _SeqNFTId <= SequencedNFTsCount , "The requested NFT does not exist");
-        require(msg.value >= Sequenced.fullaccessprice, "Not enough ether to cover the cost of full access");
+        require(msg.value == Sequenced.fullaccessprice, "Not enough ether to cover the cost of full access");
         require(msg.sender != Sequenced.dataOwner, "The NFT owner cannot execute this function");
         require(!FullAccessBuyersTracker[Sequenced.SeqNFTId][msg.sender], "A request for full access for this NFT has already been made by this caller");
 
@@ -521,7 +529,7 @@ contract GenomicsDataManagement is ReentrancyGuard{
         require(FullAccessRequestStartingTime[Sequenced.SeqNFTId][msg.sender] > block.timestamp, "The time window for full access request is still openned");
         require(!FullAccessRequestCompleted[Sequenced.SeqNFTId][_requestnumber], "The full access request has already been completed and the payment cannot be withdrawn");
 
-        payable(msg.sender).call{value: Sequenced.fullaccessprice}; 
+        payable(msg.sender).transfer(Sequenced.fullaccessprice); 
         FullAccessBuyersTracker[_SeqNFTId][msg.sender] = false;
         ActiveSequencedNFTAccessRequests[Sequenced.SeqNFTId] -= 1;
     }
@@ -531,11 +539,11 @@ contract GenomicsDataManagement is ReentrancyGuard{
         SequencedGenomicNFT storage Sequenced = SequencedNFTs[_SeqNFTId]; //Stores all the related data of the requested genomic NFT to easily access it
         FullAccessSignature storage signature = fullaccessSignatures[Sequenced.SeqNFTId][_requestnumber];
 
-        require( FullAccessBuyersAddress[Sequenced.SeqNFTId][_requestnumber] == signature.dataBuyer, "The signature does not belong to the full access buyer");
+        require(FullAccessBuyersAddress[Sequenced.SeqNFTId][_requestnumber] == signature.dataBuyer, "The signature does not belong to the full access buyer");
         require(block.timestamp <= FullAccessRequestStartingTime[Sequenced.SeqNFTId][signature.dataBuyer] + FullAccessGrantingPeriod, "The full time access window for this buyer has already closed");
         require(msg.sender == Sequenced.dataOwner, "Only the owner of the Sequenced NFT is allowed to run this function");
 
-        payable(msg.sender).call{value: Sequenced.fullaccessprice}; //The value of the full access is transferred to the owner
+        payable(msg.sender).transfer(Sequenced.fullaccessprice); //The value of the full access is transferred to the owner
         ActiveSequencedNFTAccessRequests[Sequenced.SeqNFTId] -= 1;
         FullAccessRequestCompleted[Sequenced.SeqNFTId][_requestnumber] = true; 
 
@@ -551,12 +559,12 @@ contract GenomicsDataManagement is ReentrancyGuard{
     function requestLimitedAccess(uint256 _SeqNFTId, uint256 _numberofoperations) external payable nonReentrant{
         SequencedGenomicNFT storage Sequenced = SequencedNFTs[_SeqNFTId]; //Stores all the related data of the requested genomic NFT to easily access it
         require(_SeqNFTId > 0 && _SeqNFTId <= SequencedNFTsCount , "The requested NFT does not exist");
-        require(msg.value >= _numberofoperations * Sequenced.limitedaccessprice, "Not enough ether to cover the cost of limited access");
+        require(msg.value == _numberofoperations * Sequenced.limitedaccessprice, "Not enough ether to cover the cost of limited access");
         require(msg.sender != Sequenced.dataOwner, "The NFT owner cannot execute this function");
 
         //LimitedAccessRequestStartingTime[_SeqNFTId][msg.sender] = block.timestamp;
         LimitedAccessOperationsCounter[_SeqNFTId][msg.sender] +=  _numberofoperations; //The number of permitted operations for the msg.sender for this specific NFT (_SeqNFTId) is increased
-        payable(Sequenced.dataOwner).call{value: _numberofoperations * Sequenced.limitedaccessprice}; //The total value should be the requested number of operations * cost/operation
+        payable(Sequenced.dataOwner).transfer(_numberofoperations * Sequenced.limitedaccessprice); //The total value should be the requested number of operations * cost/operation
 
     }
 
@@ -580,35 +588,39 @@ contract GenomicsDataManagement is ReentrancyGuard{
     //**** Singature Functions ****//
 
     //Signatures Storage is needed to verify the data owner has received the sequenced data from the sequencing center
-    function storeSequencingSignatures(string memory message, uint8 v, bytes32 r, bytes32 s, bytes memory sig, uint256 _RawNFTId, uint256 _requestnumber) public {
+    function storeSequencingSignatures(string memory message, bytes memory sig, uint256 _RawNFTId, uint256 _requestnumber) public {
         RawGenomicNFT storage Raw = RawNFTs[_RawNFTId];        
-        require(isValidSignature(message, v, r, s) == Raw.dataOwner, "Invalid signature");
+        require(isValidSignature(message,sig) == Raw.dataOwner, "Invalid signature"); //if they match then it confirms the receiver is the data owner
+        require(!SequencingRequestCompleted[Raw.RawNFTId][_requestnumber], "This request has already been fulfilled");
+
 
         sequencingSignatures[_RawNFTId][_requestnumber] = SequencingSignature (Raw.dataOwner, Raw.RawNFTId, Raw.nft, Raw.tokenId, message, sig);
 
-        emit SequencingSignatureStorage(isValidSignature(message, v, r, s), Raw.dataOwner, address(Raw.nft),  Raw.tokenId,  message,  sig);
+        emit SequencingSignatureStorage(isValidSignature(message,sig), Raw.dataOwner, address(Raw.nft),  Raw.tokenId,  message,  sig);
     }
 
         //Signatures storage is needed to verify the data buyer has received the sequenced data from the data owner (Initial sequencing payment)
-    function storeInitialFullAccessSignatures(string memory message, uint8 v, bytes32 r, bytes32 s, bytes memory sig, uint256 _RawNFTId, address _signer, uint256 _requestnumber) public {
+    function storeInitialFullAccessSignatures(string memory message, bytes memory sig, uint256 _RawNFTId, address _signer, uint256 _requestnumber) public {
         RawGenomicNFT storage Raw = RawNFTs[_RawNFTId];        
-        require(InitialFullAccessBuyers[Raw.RawNFTId][_signer], "The input signer address must belong to one of the active initial full access buyers");
-        require(isValidSignature(message, v, r, s) == _signer, "Invalid signature");
+        require(SequenceRequesterAddress[Raw.RawNFTId][_requestnumber] == _signer, "The inserted signer address does not belong to a valid buyer");
+        require(!SequencingRequestCompleted[Raw.RawNFTId][_requestnumber], "This request has already been fulfilled");
+        require(isValidSignature(message, sig) == _signer, "Invalid signature");
 
         initialfullaccessSignatures[Raw.RawNFTId][ _requestnumber] = InitialFullAccessSignature(_signer, Raw.RawNFTId, Raw.nft, Raw.dataOwner, Raw.tokenId, message, sig);
 
-        emit InitialFullAccessSignatureStorage(isValidSignature(message, v, r, s), _signer, address(Raw.nft),  Raw.tokenId,  message,  sig);
+        emit InitialFullAccessSignatureStorage(isValidSignature(message, sig), _signer, address(Raw.nft),  Raw.tokenId,  message,  sig);
     }
 
     //Signatures storage is needed to verify the data buyer has received the sequenced data from the data owner
-    function storeFullAccessSignatures(string memory message, uint8 v, bytes32 r, bytes32 s, bytes memory sig, uint256 _SeqNFTId, address _signer, uint256 _requestnumber) public {
+    function storeFullAccessSignatures(string memory message,  bytes memory sig, uint256 _SeqNFTId, address _signer, uint256 _requestnumber) public {
         SequencedGenomicNFT storage Sequenced = SequencedNFTs[_SeqNFTId]; //Stores all the related data of the requested genomic NFT to easily access it
-        require(FullAccessBuyersTracker[_SeqNFTId][_signer], "The input signer address must belong to one of the active full access buyers");
-        require(isValidSignature(message, v, r, s) == _signer, "Invalid signature");
+        require(FullAccessBuyersAddress[Sequenced.SeqNFTId][_requestnumber] == _signer, "The input signer address does not belong to a valid buyer or a valid request number");
+        require(!FullAccessRequestCompleted[Sequenced.SeqNFTId][_requestnumber], "This request has already been fulfilled");
+        require(isValidSignature(message, sig) == _signer, "Invalid signature");
 
         fullaccessSignatures[Sequenced.SeqNFTId][_requestnumber] = FullAccessSignature(_signer, Sequenced.SeqNFTId, Sequenced.nft2, Sequenced.tokenId, message, sig);
 
-        emit FullAccessSignatureStorage(isValidSignature(message, v, r, s), _signer, address(Sequenced.nft2),  Sequenced.tokenId,  message,  sig);
+        emit FullAccessSignatureStorage(isValidSignature(message, sig), _signer, address(Sequenced.nft2),  Sequenced.tokenId,  message,  sig);
     }
 
         //Signatures storage is needed to verify the data buyer has received the sequenced data from the data owner
@@ -623,9 +635,20 @@ contract GenomicsDataManagement is ReentrancyGuard{
     //}
     
 
-
     // Returns the public address that signed a given string message (Message Signing)
-    function isValidSignature(string memory message, uint8 v, bytes32 r, bytes32 s) public pure returns (address signer) {
+    function isValidSignature(string memory message, bytes memory sig) public pure returns (address signer) {
+
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+        r := mload(add(sig, 32))
+        s := mload(add(sig, 64))
+        v := and(mload(add(sig, 65)), 255)
+        }
+        
+        if (v < 27) v += 27;
+
         // The message header; we will fill in the length next
         string memory header = "\x19Ethereum Signed Message:\n000000";
         uint256 lengthOffset;
