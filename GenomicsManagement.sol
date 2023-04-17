@@ -7,6 +7,8 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
+
+
 //import "@openzeppelin/contracts/access/Ownable.sol";
 
 import "hardhat/console.sol";
@@ -20,6 +22,7 @@ contract GenomicsDataManagement is ReentrancyGuard{
     IERC721 private RawNFTSmartContract; //This fixes the smart contract of raw nfts to prevent other smart contracts from interacting
     IERC721 private SequencedNFTSmartContract; //Same as Raw NFT SC
     uint256 public SequencingPeriod; //Used to create a time window for sequencing genomic data
+    uint256 public InitialFullAccessGrantingPeriod; //The time window for the owner to grant access for the initial buyer
     uint256 public FullAccessGrantingPeriod; //Timewindow to grant full access
     uint256 public LimitedAccessGrantingPeriod; //Timewindow to grant limited access
     address public RegistrationAuthority; //Repsonsible for registering eligible sequencing Centers
@@ -56,6 +59,8 @@ contract GenomicsDataManagement is ReentrancyGuard{
     //NFT Count => sequence number
     mapping(uint256 => uint256) public SequencingRequestsCounter; //Stores the number of request and it keeps going up and cannot be changed manually
 
+    //NFT Count => Security Deposit value
+    mapping(uint256 => uint256) public SecurityDepositValue; //Stores the value of the security deposit for a listed NFT [No need to map the address as each NFT has a unique counter and cannot be replicated by other entities]
 
     //NFT count => mapping(request number => buyer address)
     mapping(uint256 => mapping(uint256 => address)) public SequenceRequesterAddress; //Stores the address of the buyer who requested sequencing
@@ -66,6 +71,9 @@ contract GenomicsDataManagement is ReentrancyGuard{
 
     //NFT count => active sequencing requests
     mapping(uint256 => uint256) public ActiveSequencingRequests; 
+
+    //NFT count => active initial full access requests
+    mapping(uint256 => uint256) public ActiveInitialFullAccessRequests;
 
     //buyer address => (NFT count => bool)
     mapping(address => mapping(uint256 => bool)) public sequencingPayerTracker; //Tracks the addresses of buyers who made sequencing payments for RAWNFTId (assuming same address cant make more than one payment to the same NFT at the same time)
@@ -247,9 +255,10 @@ contract GenomicsDataManagement is ReentrancyGuard{
 
 
 
-    constructor(uint256 _SequencingPeriod, uint256 _sequencingPrice1, uint256 _sequencingPrice2, uint256 _sequencingPrice3, uint256 _FullAccessGrantingPeriod, uint256 _LimitedAccessGrantingPeriod, address _rawNFTaddress, address _seqNFTAddress){
+    constructor(uint256 _SequencingPeriod, uint256 _InitialFullAccessGrantingPeriod, uint256 _sequencingPrice1, uint256 _sequencingPrice2, uint256 _sequencingPrice3, uint256 _FullAccessGrantingPeriod, uint256 _LimitedAccessGrantingPeriod, address _rawNFTaddress, address _seqNFTAddress){
         
         SequencingPeriod = _SequencingPeriod * 1 days; //The period is arbitrarly chosens
+        InitialFullAccessGrantingPeriod = _InitialFullAccessGrantingPeriod * 1 days; //The period is arbitrarly chosen
         FullAccessGrantingPeriod = _FullAccessGrantingPeriod * 1 days; //The period is arbitrarly chosen
         LimitedAccessGrantingPeriod = _LimitedAccessGrantingPeriod * 1 days; //The period is arbitrarly chosen
         SequencingMethodPrice[1] = _sequencingPrice1 * 1 ether;
@@ -339,12 +348,32 @@ contract GenomicsDataManagement is ReentrancyGuard{
         SequencingMethodPrice[3] = _method3price * 1 ether;
     }
 
+    //This function is used to return the max value among the sequencing methods prices [Note: The input is specified to 3 numbers because there are only 3 sequencing methods in our solution]
+    function max(uint256[3] memory numbers) internal pure returns (uint256) {
+    require(numbers.length > 0); // throw an exception if the condition is not met
+    uint256 maxNumber; // default 0, the lowest value of `uint256`
+
+    for (uint256 i = 0; i < numbers.length; i++) {
+        if (numbers[i] > maxNumber) {
+            maxNumber = numbers[i];
+        }
+    }
+
+    return maxNumber;
+}
+
     //This function only lists the raw genomic NFT so that interested buyer can view it and decide to sequence it or not
     //This function won't work unless the user has an NFT with the specified token ID in the RawNFTSmartContract
-    function listRawGenomicNFT(uint256 _tokenId) external nonReentrant{
+    function listRawGenomicNFT(uint256 _tokenId) external payable nonReentrant{
+        uint256 securitydeposit = max([SequencingMethodPrice[1],SequencingMethodPrice[2],SequencingMethodPrice[3]]); //This line gets the highest sequencing method price so that the owner pays it as security deposit
+        require(msg.value == securitydeposit, "Not enough ether to cover the security deposit");
+
         RawNFTSmartContract.transferFrom(msg.sender, address(this), _tokenId); //Transfers the NFT from its owner to the smart contract 
         RawNFTsCount++; 
         RawNFTs[RawNFTsCount] = RawGenomicNFT (RawNFTsCount, RawNFTSmartContract, _tokenId, payable(msg.sender),  SequencingMethodPrice[1], SequencingMethodPrice[2], SequencingMethodPrice[3]);
+        
+        SecurityDepositValue[RawNFTsCount] = securitydeposit;
+        payable(address(this)).call{value: securitydeposit};  
 
         emit ListedRawGenomicNFT(RawNFTsCount, address(RawNFTSmartContract), _tokenId, msg.sender); 
     }
@@ -354,8 +383,10 @@ contract GenomicsDataManagement is ReentrancyGuard{
         require(msg.sender == Raw.dataOwner, "Only the owner of the Raw Genomic NFT is allowed to delist it");
         require(ActiveSequencingRequests[Raw.RawNFTId] == 0, "There are active sequencing requestes, therefore, it cannot be delisted");
         require(ActiveChildrenListings[Raw.RawNFTId] == 0, "The NFT cannot be delisted as it has active children NFTs listed");
-        //require(!Raw.isPendingSequencing, "Cannot delist because there is a pending sequencing request");
+        require(ActiveInitialFullAccessRequests[Raw.RawNFTId] == 0, "The NFT cannot be delisted as it has an active intial full access request");       
         Raw.nft.transferFrom(address(this), msg.sender, Raw.tokenId);
+        payable(msg.sender).transfer(SecurityDepositValue[Raw.RawNFTId]);
+        delete SecurityDepositValue[Raw.RawNFTId]; 
         delete RawNFTs[_RawNFTId]; //Removes all entries of the delisted NFT
         emit DelistedRawGenomicNFT(Raw.RawNFTId, address(Raw.nft), Raw.tokenId, msg.sender);
     }
@@ -368,7 +399,7 @@ contract GenomicsDataManagement is ReentrancyGuard{
         require(SequencingMethodPrice[_sequencingmethod] > 0, "The selected sequencing method does not exist"); //If free sequencinng is required in the solution, then a mapping to boolean will be needed
         require(msg.value == SequencingMethodPrice[_sequencingmethod], "Not enough ether to cover the sequencing cost or it exceeds the sequencing cost");
         require(!sequencingPayerTracker[msg.sender][Raw.RawNFTId], "This buyer has already submitted a sequencing request for this NFT");
-        require(msg.sender != Raw.dataOwner, "The owner of the NFT cannot execute this function"); 
+        //require(msg.sender != Raw.dataOwner, "The owner of the NFT cannot execute this function"); 
 
         payable(address(this)).call{value: SequencingMethodPrice[_sequencingmethod]}; //The sequencing value remains in the smart contract until the sequencing is completed 
         sequencingRequesterPaidAmount[msg.sender][Raw.RawNFTId] =  SequencingMethodPrice[_sequencingmethod]; //This is needed to process the payment for the buyer later on and keep track of him/her
@@ -376,6 +407,7 @@ contract GenomicsDataManagement is ReentrancyGuard{
         SequencingRequestsCounter[Raw.RawNFTId] +=1; 
         SequencingRequestNumberPerBuyer[Raw.RawNFTId][msg.sender] = SequencingRequestsCounter[Raw.RawNFTId]; //Storing the request number per buyer
         ActiveSequencingRequests[Raw.RawNFTId] += 1; //The active number of requests can be updated when a request is fulfilled
+        ActiveInitialFullAccessRequests[Raw.RawNFTId] += 1; //This is important to ensure the buyer receives the sequenced NFT from the buyer after the sequencing center finishes its task
         SequencingRequestStartTime[Raw.RawNFTId][SequencingRequestNumberPerBuyer[Raw.RawNFTId][msg.sender]] = block.timestamp; 
         SequenceRequesterAddress[Raw.RawNFTId][SequencingRequestsCounter[Raw.RawNFTId]] = msg.sender; //Stores the address of sequence requester to be used for checking during message signature
         RequestedSequencingMethod[Raw.RawNFTId][SequencingRequestNumberPerBuyer[Raw.RawNFTId][msg.sender]] = _sequencingmethod;
@@ -395,19 +427,33 @@ contract GenomicsDataManagement is ReentrancyGuard{
 
     }
 
-    //This function allows a buyer to withdraw funds if full access is not granted in time
-    ////If a buyer can place multiple requests at the same time, then request number should be added to sequencingPayerTracker mapping
-    function withdrawRawNFTSequencingPayment(uint256 _RawNFTId, uint256 _requestnumber) external payable nonReentrant{
+    //This function allows a buyer to withdraw funds if the sequencing center does not sequence the genomic data in time
+    function refundRawNFTSequencingPayment(uint256 _RawNFTId, uint256 _requestnumber) external payable nonReentrant{
         RawGenomicNFT storage Raw = RawNFTs[_RawNFTId]; //Stores all the related data of the requested genomic NFT to easily access it
         require(SequenceRequesterAddress[Raw.RawNFTId][_requestnumber] == msg.sender, "The caller has not paid for the sequencing of this NFT");
         require(sequencingPayerTracker[msg.sender][Raw.RawNFTId] == true, "The caller has not paid for the sequencing of this NFT"); 
-        require(SequencingRequestStartTime[Raw.RawNFTId][_requestnumber] > block.timestamp, "The time window for full access request is still openned");
+        //require(SequencingRequestStartTime[Raw.RawNFTId][_requestnumber] > block.timestamp, "The time window for full access request is still openned");
+        require(block.timestamp > SequencingRequestStartTime[Raw.RawNFTId][_requestnumber] + SequencingPeriod , "The time window for sequencing is still openned");
         require(!SequencingRequestCompleted[Raw.RawNFTId][_requestnumber], "This sequencing request has already been completed and funds cannot be withdrawn");
     
         //payable(msg.sender).call{value: sequencingRequesterPaidAmount[msg.sender][Raw.RawNFTId]}; 
         payable(msg.sender).transfer(sequencingRequesterPaidAmount[msg.sender][Raw.RawNFTId]);
+        //SecurityDepositValue[Raw.RawNFTId] -= sequencingRequesterPaidAmount[msg.sender][Raw.RawNFTId]; //The paid amount by the buyer is deducted from the owner's security deposit
         sequencingPayerTracker[msg.sender][Raw.RawNFTId] = false;
         ActiveSequencingRequests[Raw.RawNFTId] -= 1; 
+    }
+
+        //This function allows a buyer to withdraw funds if the owner does not grant access to PRE in time
+    function refundInitialFullAccessPayment(uint256 _RawNFTId, uint256 _requestnumber) external payable nonReentrant{
+        RawGenomicNFT storage Raw = RawNFTs[_RawNFTId]; //Stores all the related data of the requested genomic NFT to easily access it
+        require(SequenceRequesterAddress[Raw.RawNFTId][_requestnumber] == msg.sender, "The caller has not paid for the sequencing of this NFT");
+        require(sequencingPayerTracker[msg.sender][Raw.RawNFTId] == true, "The caller has not paid for the sequencing of this NFT"); 
+        require(block.timestamp > SequencingRequestStartTime[Raw.RawNFTId][_requestnumber] + SequencingPeriod + InitialFullAccessGrantingPeriod, "The time window for initial full access is still openned");
+    
+        SecurityDepositValue[Raw.RawNFTId] -= sequencingRequesterPaidAmount[msg.sender][Raw.RawNFTId]; //The paid amount by the buyer is deducted from the owner's security deposit
+        payable(msg.sender).transfer(sequencingRequesterPaidAmount[msg.sender][Raw.RawNFTId]);
+
+        ActiveInitialFullAccessRequests[Raw.RawNFTId] -= 0; //This allows the owner to withdraw the remaining security deposit from the delist function
     }
 
     //This function allows sequencing centers to commit to a raw genomic data sequencing
@@ -436,31 +482,36 @@ contract GenomicsDataManagement is ReentrancyGuard{
         require(CommittedsequencingCenter[Raw.RawNFTId][_requestnumber] == msg.sender, "Only the committed sequencing center to this NFT can execute this function");
         require(signature.dataOwner == Raw.dataOwner, "The sequencing center cannot prove sequencing raw genomic data without the reception confirmation signature of the owner");
 
-
         //payable(msg.sender).call{value: SequencingMethodPrice[RequestedSequencingMethod[Raw.RawNFTId][_requestnumber]]}; //Transfer the sequencing value to the sequencing center 
         payable(msg.sender).transfer(SequencingMethodPrice[RequestedSequencingMethod[Raw.RawNFTId][_requestnumber]]);
+        ActiveSequencingRequests[Raw.RawNFTId] -= 1; 
+        SequencingRequestCompleted[Raw.RawNFTId][_requestnumber] = true; 
         emit RawNFTisSequenced(Raw.RawNFTId, address(Raw.nft), Raw.tokenId, Raw.dataOwner, SequenceRequesterAddress[Raw.RawNFTId][_requestnumber], msg.sender, signature.sig);
 
 
     }
 
-    function IniitialFullAccessProof(uint256 _RawNFTId, uint256 _requestnumber) external payable nonReentrant{
+
+    //This function allows the original owner to withdraw the security deposit
+    function InitialFullAccessProof(uint256 _RawNFTId, uint256 _requestnumber) external payable nonReentrant{
     RawGenomicNFT storage Raw = RawNFTs[_RawNFTId]; //Stores all the related data of the requested genomic NFT to easily access it
     InitialFullAccessSignature storage signature = initialfullaccessSignatures[Raw.RawNFTId][ _requestnumber];
 
     require(SequenceRequesterAddress[Raw.RawNFTId][_requestnumber] == signature.dataBuyer, "The signature does not belong to the sequencing buyer");
     require(sequencingPayerTracker[SequenceRequesterAddress[Raw.RawNFTId][_requestnumber]][Raw.RawNFTId], "The buyer address doesn't belong to any valid initial full access buyers");
-    require(block.timestamp <= SequencingRequestStartTime[Raw.RawNFTId][_requestnumber] + SequencingPeriod, "The sequencing time window is already closed");
+    require(block.timestamp <= SequencingRequestStartTime[Raw.RawNFTId][_requestnumber] + SequencingPeriod + InitialFullAccessGrantingPeriod, "The Initial Full Access Granting Period time window is already closed");
     require(msg.sender == Raw.dataOwner, "Only the owner of the Raw NFT is allowed to run this function");
 
-    ActiveSequencingRequests[Raw.RawNFTId] -= 1; 
-    SequencingRequestCompleted[Raw.RawNFTId][_requestnumber] = true; 
+    ActiveInitialFullAccessRequests[Raw.RawNFTId] -= 1; //This allows the owner to delist the NFT 
     SequencedNFTMintingBalance[Raw.dataOwner][Raw.RawNFTId] += 1; //The data owner's balance/allowance of minting sequenced genomic data NFT that will be linked to this RAW NFT is increased by 1
-
-
+    payable(msg.sender).transfer(SecurityDepositValue[Raw.RawNFTId]); //The data owner withdraws the security deposit after proving granting access to the buyer
+    SecurityDepositValue[Raw.RawNFTId] = 0; //To prevent double spending if the owner delists the NFT later on
+    
     emit InitialFullAccessGranted(Raw.RawNFTId, address(Raw.nft), Raw.tokenId, msg.sender, signature.dataBuyer);
 
     }
+
+    //Should there be a function for the buyer to withdraw funds from the security deposit if the owner does not grant PRE access?
 
 
 
@@ -603,7 +654,7 @@ contract GenomicsDataManagement is ReentrancyGuard{
     function storeInitialFullAccessSignatures(string memory message, bytes memory sig, uint256 _RawNFTId, address _signer, uint256 _requestnumber) public {
         RawGenomicNFT storage Raw = RawNFTs[_RawNFTId];        
         require(SequenceRequesterAddress[Raw.RawNFTId][_requestnumber] == _signer, "The inserted signer address does not belong to a valid buyer");
-        require(!SequencingRequestCompleted[Raw.RawNFTId][_requestnumber], "This request has already been fulfilled");
+        //require(!SequencingRequestCompleted[Raw.RawNFTId][_requestnumber], "This request has already been fulfilled");
         require(isValidSignature(message, sig) == _signer, "Invalid signature");
 
         initialfullaccessSignatures[Raw.RawNFTId][ _requestnumber] = InitialFullAccessSignature(_signer, Raw.RawNFTId, Raw.nft, Raw.dataOwner, Raw.tokenId, message, sig);
