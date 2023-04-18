@@ -432,7 +432,7 @@ contract GenomicsDataManagement is ReentrancyGuard{
     function refundRawNFTSequencingPayment(uint256 _RawNFTId, uint256 _requestnumber) external payable nonReentrant{
         RawGenomicNFT storage Raw = RawNFTs[_RawNFTId]; //Stores all the related data of the requested genomic NFT to easily access it
         require(SequenceRequesterAddress[Raw.RawNFTId][_requestnumber] == msg.sender, "The caller has not paid for the sequencing of this NFT");
-        require(sequencingPayerTracker[msg.sender][Raw.RawNFTId] == true, "The caller has not paid for the sequencing of this NFT"); 
+        require(sequencingPayerTracker[msg.sender][Raw.RawNFTId], "The caller has not paid for the sequencing of this NFT"); 
         //require(SequencingRequestStartTime[Raw.RawNFTId][_requestnumber] > block.timestamp, "The time window for full access request is still openned");
         require(block.timestamp > SequencingRequestStartTime[Raw.RawNFTId][_requestnumber] + SequencingPeriod , "The time window for sequencing is still openned");
         require(!SequencingRequestCompleted[Raw.RawNFTId][_requestnumber], "This sequencing request has already been completed and funds cannot be withdrawn");
@@ -448,7 +448,7 @@ contract GenomicsDataManagement is ReentrancyGuard{
     function refundInitialFullAccessPayment(uint256 _RawNFTId, uint256 _requestnumber) external payable nonReentrant{
         RawGenomicNFT storage Raw = RawNFTs[_RawNFTId]; //Stores all the related data of the requested genomic NFT to easily access it
         require(SequenceRequesterAddress[Raw.RawNFTId][_requestnumber] == msg.sender, "The caller has not paid for the sequencing of this NFT");
-        require(sequencingPayerTracker[msg.sender][Raw.RawNFTId] == true, "The caller has not paid for the sequencing of this NFT"); 
+        require(sequencingPayerTracker[msg.sender][Raw.RawNFTId], "The caller has not paid for the sequencing of this NFT"); 
         require(block.timestamp > SequencingRequestStartTime[Raw.RawNFTId][_requestnumber] + SequencingPeriod + InitialFullAccessGrantingPeriod, "The time window for initial full access is still openned");
     
         SecurityDepositValue[Raw.RawNFTId] -= sequencingRequesterPaidAmount[msg.sender][Raw.RawNFTId]; //The paid amount by the buyer is deducted from the owner's security deposit
