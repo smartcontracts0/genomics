@@ -245,7 +245,7 @@ contract GenomicsDataManagement is ReentrancyGuard{
     event DelistedSequencedGenomicNFT(uint256 SeqNFTId, address indexed nft, uint256 tokenId, address indexed dataOwner);
     event FullAccessRequested(uint256 SeqNFTId, address indexed nft, uint256 tokenId, address indexed dataOwner, address indexed fullaccessbuyer);
     event FullAccessGranted(uint256 SeqNFTId, address indexed nft, uint256 tokenId, address indexed dataOwner, address indexed dataBuyer);
-    event InitialFullAccessGranted(uint256 SeqNFTId, address indexed nft, uint256 tokenId, address indexed dataOwner, address indexed dataBuyer);
+    event InitialFullAccessGranted(uint256 RawNFTId, address indexed nft, uint256 tokenId, address indexed dataOwner, address indexed dataBuyer);
     event FullAccessSignatureStorage(address indexed verifiedAddress, address indexed dataBuyer, address indexed nft, uint256 tokenId, string message, bytes signature);
     event InitialFullAccessSignatureStorage(address indexed verifiedAddress, address indexed dataBuyer, address indexed nft, uint256 tokenId, string message, bytes signature);
     event LimitedAccessSignatureStorage(address indexed verifiedAddress, address indexed dataBuyer, address indexed nft, uint256 tokenId, string message, bytes signature);
@@ -384,10 +384,11 @@ contract GenomicsDataManagement is ReentrancyGuard{
         require(ActiveSequencingRequests[Raw.RawNFTId] == 0, "There are active sequencing requestes, therefore, it cannot be delisted");
         require(ActiveChildrenListings[Raw.RawNFTId] == 0, "The NFT cannot be delisted as it has active children NFTs listed");
         require(ActiveInitialFullAccessRequests[Raw.RawNFTId] == 0, "The NFT cannot be delisted as it has an active intial full access request");       
-        Raw.nft.transferFrom(address(this), msg.sender, Raw.tokenId);
-        payable(msg.sender).transfer(SecurityDepositValue[Raw.RawNFTId]);
         delete SecurityDepositValue[Raw.RawNFTId]; 
         delete RawNFTs[_RawNFTId]; //Removes all entries of the delisted NFT
+        Raw.nft.transferFrom(address(this), msg.sender, Raw.tokenId);
+        payable(msg.sender).transfer(SecurityDepositValue[Raw.RawNFTId]);
+
         emit DelistedRawGenomicNFT(Raw.RawNFTId, address(Raw.nft), Raw.tokenId, msg.sender);
     }
 
@@ -547,9 +548,9 @@ contract GenomicsDataManagement is ReentrancyGuard{
         SequencedGenomicNFT storage Sequenced = SequencedNFTs[_SeqNFTId]; //Stores all the related data of the requested genomic NFT to easily access it
         require(msg.sender == Sequenced.dataOwner, "Only the owner of the sequenced Genomic NFT is allowed to delist it");
         require(ActiveSequencedNFTAccessRequests[Sequenced.SeqNFTId] == 0, "Cannot delist while there are pending full/limited access requests");
-        Sequenced.nft2.transferFrom(address(this), msg.sender, Sequenced.tokenId);
         ActiveChildrenListings[Sequenced.SeqNFTId] -= 1;
         delete SequencedNFTs[Sequenced.SeqNFTId]; //Removes all entries of the delisted NFT
+        Sequenced.nft2.transferFrom(address(this), msg.sender, Sequenced.tokenId);
         emit DelistedSequencedGenomicNFT(Sequenced.SeqNFTId, address(Sequenced.nft2), Sequenced.tokenId, msg.sender);
     }
 
